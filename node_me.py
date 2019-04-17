@@ -1,5 +1,8 @@
 import numpy as np
 from scipy.optimize import root
+import matplotlib.pyplot as plt
+import matplotlib.pylab as pylab
+import matplotlib.ticker as ticker
 
 
 class NodeME:
@@ -36,7 +39,7 @@ class NodeME:
         self.gamma = 1/self.k
 
 
-    def run(self,k_mean=6,pnts=100,y_range=(2000,0)):
+    def run(self,k_mean=6,pnts=1000,y_range=(2000,0)):
         """
         Calculate maximum entropy distribution for specified <k> at given number of points.
         
@@ -49,7 +52,7 @@ class NodeME:
         """
 
         # Solve objective function for x given y values
-        for y in np.linspace(2000,0,pnts):
+        for y in np.linspace(y_range[0],y_range[1],pnts):
             opt = root(obj,x0=1,args=(y,self.chi,self.gamma,k_mean,self.k),)
             if opt.success:
                 pk = calculate_pk(opt.x,y,self.chi,self.gamma)
@@ -83,11 +86,50 @@ class NodeME:
         return np.array(self.k_var)
 
 
+    def plot_pk_variance(self,k=6):
+        """
+        Plot results of maximum entropy calculation, pk vs variance (Lemaitre's law).
+        
+        :param k: p_k to plot against variance
+        :type k: int
+        """
+
+        # Set up plot
+        params = {'font.family': 'serif','font.serif': 'DejaVu Serif','mathtext.fontset': 'dejavuserif',
+            'axes.labelsize': 12,'axes.titlesize': 12,'xtick.labelsize': 12,'ytick.labelsize': 12}
+        pylab.rcParams.update(params)
+        fig, ax = plt.subplots()
+
+        # Line graph of p_k vs variance
+        ax.plot(self.get_pk(k=k),self.get_variance(),lw='1.5',color='mediumblue')
+        ax.set_xlabel(r'$p_{}$'.format(k))
+        ax.set_ylabel(r'$\langle k^2\rangle - \langle k \rangle^2$')
+        ax.set_xlim((0,1))
+        ax.set_ylim((0,None))
+        ax.xaxis.set_major_locator(ticker.MultipleLocator(0.1))
+        ax.xaxis.set_minor_locator(ticker.MultipleLocator(0.02))
+        ax.yaxis.set_major_locator(ticker.MultipleLocator(1))
+        ax.yaxis.set_minor_locator(ticker.MultipleLocator(0.5))
+        plt.show()
+
+
+    def write(self):
+        """
+        Write results of p_k and variance to file, 'node_dist.dat'
+        """
+
+        with open('./node_dist.dat','w') as f:
+            f.write(('{:12.8f} '*(self.k.size)+'  {} \n').format(*self.k,'var'))
+            fmt = '{:12.8f} '*(self.k.size+1)+'\n'
+            for i,pk in enumerate(self.pk):
+                f.write(fmt.format(*pk,self.k_var[i]))
+
+
 def obj(x,y,chi,gamma,constraint,k):
     """
     Lemaitre objective function. 
-    p_k = e^(-x*chi) * e^(-y*gamma) / Z
-    Solve sum_k (k-k_mean)p_k == 0
+    pk = e^(-x*chi) * e^(-y*gamma) / Z
+    Solve sum_k (k-k_mean)pk == 0
     
     :param x: Lagrange multiplier 
     :param y: Lagrange multiplier
@@ -109,9 +151,9 @@ def obj(x,y,chi,gamma,constraint,k):
 
 def calculate_pk(x,y,chi,gamma,tol=-20):
     """
-    Calculate p_k in logarithmic space to avoid underflow errors,
+    Calculate pk in logarithmic space to avoid underflow errors,
     as can get very small contributions from some ring sizes.
-    p_k = e^(-x*chi) * e^(-y*gamma) / Z
+    pk = e^(-x*chi) * e^(-y*gamma) / Z
     
     :param x: Lagrange multiplier
     :param y: Lagrange multiplier
@@ -121,7 +163,7 @@ def calculate_pk(x,y,chi,gamma,tol=-20):
     :return: normalised p_k with insignificant values set to zero
     """
 
-    # Calculate unnormalised p_k, sum of p_k and therefore normalised p_k
+    # Calculate unnormalised pk, sum of pk and therefore normalised pk
     log_pk = -x*chi + -y*gamma
     log_pk_max = np.max(log_pk)
     log_z = log_pk_max + np.log(np.sum(np.exp(log_pk - log_pk_max)))
@@ -138,12 +180,9 @@ def calculate_pk(x,y,chi,gamma,tol=-20):
 if __name__ == '__main__':
 
     me = NodeME()
-    me.run(pnts=100)
-    p6=me.get_pk(k=6)
-    var=me.get_variance()
-
-    for i in range(100):
-        print(p6[i][0],var[i])
+    me.run()
+    me.plot_pk_variance()
+    me.write()
 
 
 
