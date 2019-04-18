@@ -28,6 +28,7 @@ class NodeME:
         # Set up calculation and results vectors
         self.k = np.arange(k_limits[0],k_limits[-1]+1,dtype=int)
         self.k_mean = k_mean
+        self.constraint = self.k_mean
         self.calculate_coefficients()
         self.pk = [] # me distribution
         self.k_var = [] # variance <k^2> - <k>^2
@@ -54,11 +55,11 @@ class NodeME:
         :return: numpy array of maximum entropy distribution
         """
 
-        opt = root(target_obj,x0=1,args=(self.chi,self.gamma,self.k_mean,self.k,target_pk,k))
+        opt = root(target_obj,x0=1,args=(self,target_pk,k))
         if opt.success:
             y = opt.x
-            x = root(me_obj,x0=1,args=(y,self.chi,self.gamma,self.k_mean,self.k)).x
-            pk = calculate_pk(x,y,self.chi,self.gamma)
+            x = root(me_obj,x0=1,args=(y,self)).x
+            pk = calculate_pk(x,y,self)
             return pk
         else:
             return None
@@ -76,9 +77,9 @@ class NodeME:
 
         # Solve objective function for x given y values
         for y in np.linspace(y_range[0],y_range[1],pnts):
-            opt = root(me_obj,x0=1,args=(y,self.chi,self.gamma,self.k_mean,self.k))
+            opt = root(me_obj,x0=1,args=(y,self))
             if opt.success:
-                pk = calculate_pk(opt.x,y,self.chi,self.gamma)
+                pk = calculate_pk(opt.x,y,self)
                 var_k = (self.k*self.k*pk).sum() - ((self.k*pk).sum())**2
                 self.pk.append(pk)
                 self.k_var.append(var_k)
@@ -148,25 +149,23 @@ class NodeME:
                 f.write(fmt.format(*pk,self.k_var[i]))
 
 
-def target_obj(y,chi,gamma,k_mean,k,target_pk,target_k):
+def target_obj(y,net,target_pk,target_k):
     """
     Objective function to optimise Lagrange multipliers to give target p_k.
     
-    :param lm: 
-    :param chi: 
-    :param gamma: 
-    :param mean_k: 
-    :param k: 
-    :param target_pk: 
-    :param target_k: 
+    :param y: Lagrange multiplier 
+    :param net: network object
+    :type net: NodeME object
+    :param target_pk: target value of pk
+    :param target_k: k for target value of pk
     :return: 
     """
 
     # Find maximum entropy solution
-    opt = root(me_obj,x0=1,args=(y,chi,gamma,k_mean,k))
+    opt = root(me_obj,x0=1,args=(y,net))
     x = opt.x
-    pk = calculate_pk(x,y,chi,gamma)
-    p = pk[k==target_k]
+    pk = calculate_pk(x,y,net)
+    p = pk[net.k==target_k]
 
     # Calculate distance to target
     f = (p-target_pk)**2
@@ -174,7 +173,7 @@ def target_obj(y,chi,gamma,k_mean,k,target_pk,target_k):
     return f
 
 
-def me_obj(x,y,chi,gamma,constraint,k):
+def me_obj(x,y,net):
     """
     Lemaitre objective function. 
     pk = e^(-x*chi) * e^(-y*gamma) / Z
@@ -182,23 +181,21 @@ def me_obj(x,y,chi,gamma,constraint,k):
     
     :param x: Lagrange multiplier 
     :param y: Lagrange multiplier
-    :param chi: coefficients for Lagrange multiplier
-    :param gamma: coefficients for Lagrange multiplier
-    :param constraint: mean of k
-    :param k: node degrees included in calculation
+    :param net: network object
+    :type net: NodeMe object
     :return: sum_k (k-k_mean)p_k
     """
 
     # Get significant pk values
-    pk = calculate_pk(x,y,chi,gamma)
+    pk = calculate_pk(x,y,net)
 
     # Calculate objective function
-    f = np.sum((k-constraint) * pk)
+    f = np.sum((net.k-net.constraint) * pk)
 
     return f
 
 
-def calculate_pk(x,y,chi,gamma,tol=-20):
+def calculate_pk(x,y,net,tol=-20):
     """
     Calculate pk in logarithmic space to avoid underflow errors,
     as can get very small contributions from some ring sizes.
@@ -206,14 +203,14 @@ def calculate_pk(x,y,chi,gamma,tol=-20):
     
     :param x: Lagrange multiplier
     :param y: Lagrange multiplier
-    :param chi: coefficients for Lagrange multiplier
-    :param gamma: coefficients for Lagrange multiplier
+    :param net: network object
+    :type net: NodeMe object
     :param tol: cutoff for significant k values
     :return: normalised pk with insignificant values set to zero
     """
 
     # Calculate unnormalised pk, sum of pk and therefore normalised pk
-    log_pk = - x*chi - y*gamma
+    log_pk = - x*net.chi - y*net.gamma
     log_pk_max = np.max(log_pk)
     log_norm = log_pk_max + np.log(np.sum(np.exp(log_pk - log_pk_max)))
     log_pk = log_pk - log_norm
