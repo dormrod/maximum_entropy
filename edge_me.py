@@ -14,20 +14,26 @@ class EdgeME:
     """
 
 
-    def __init__(self,k_limits=(3,20)):
+    def __init__(self,k_limits=(3,20),k_mean=6.0):
         """
-        Initialise with limits on edge degrees. 
+        Initialise with limits on edge degrees and mean node degree. 
         Larger edge degrees only contribute significantly at low p6.
         Poisson Voronoi distribution expected to have 3<=k<=16.
         
         :param k_limits: lower and upper limit of edge degrees.
         :type k_limits: tuple of int
+        :param k_mean: mean node degree
+        :type k_mean: float
         """
 
         # Set up calculation and results vectors
         self.k = np.arange(k_limits[0],k_limits[-1]+1,dtype=int)
         self.kj = np.array([np.array([ki for i in range(self.k.size)]) for ki in self.k])
         self.kk = np.array([np.array([kj for kj in self.k]) for i in range(self.k.size)])
+        self.rkj = 1/self.kj
+        self.rkk = 1/self.kk
+        self.k_mean = k_mean
+        self.constraint = 1/k_mean
         self.calculate_coefficients()
         self.ejk = [] # me edge joint distribution
         self.pk = [] # me node distribution
@@ -41,31 +47,51 @@ class EdgeME:
         """
 
         self.chi = 0.5*(self.kj+self.kk)
-        self.gamma = 0.5*(1/self.kj+1/self.kk)
+        self.gamma = 0.5*(self.rkj+self.rkk)
         self.zeta = self.kj*self.kk
 
 
-    def run(self,k_mean=6,pnts=1000,y_range=(3000,0),z=0.0):
+    def __call__(self,target_pk,target_r,k=6):
+        """
+        Optimise Lagrange multipliers to target a specific pk and r value, returning ME distribution.
+        
+        :param target_pk: target value of pk
+        :type target_pk: float
+        :param target_r: target value of r
+        :type target_r: float
+        :param k: k value of pk 
+        :type k: int
+        :return: numpy array of maximum entropy edge joint distribution, node distribution and assortativity
+        """
+
+        opt = root(target_obj,x0=[1,0.0],args=(self,target_pk,k,target_r))
+        if opt.success:
+            y,z = opt.x
+            x = root(me_obj,x0=1,args=(y,z,self)).x
+            ejk = calculate_ejk(x,y,z,self)
+            pk,r = self.analyse_ejk(ejk)
+            return ejk,pk,r
+        else:
+            return None
+
+
+    def scan(self,pnts=1000,y_range=(3000,0),z=0.0):
         """
         Calculate maximum entropy distribution for specified <k> at given number of points.
         
-        :param k_mean: mean node degree
-        :type k_mean: float
         :param pnts: number of points to calculate maximum entropy
         :type pnts: int
         :param y_range: optional parameter specifying range for second Lagrange multiplier, default selected for <k>=6
         :type y_range: tuple of floats
-        :param z: value of Lagrange multiplier determining the assortativity
+        :param z: value of third Lagrange multiplier determining the assortativity
         :type z: float
         """
 
         # Solve objective function for x given y and z values
-        self.k_mean = k_mean
-        constraint = 1/self.k_mean
         for y in np.linspace(y_range[0],y_range[1],pnts):
-            opt = root(obj,x0=1,args=(y,z,self.chi,self.gamma,self.zeta,constraint,self.kj,self.kk))
+            opt = root(me_obj,x0=1,args=(y,z,self))
             if opt.success:
-                ejk = calculate_ejk(opt.x,y,z,self.chi,self.gamma,self.zeta)
+                ejk = calculate_ejk(opt.x,y,z,self)
                 pk,r = self.analyse_ejk(ejk)
                 self.ejk.append(ejk)
                 self.pk.append(pk)
@@ -156,51 +182,73 @@ class EdgeME:
         plt.show()
 
 
-def obj(x,y,z,chi,gamma,zeta,constraint,kj,kk):
+def target_obj(yz,net,target_pk,target_k,target_r):
+    """
+    Objective function to optimise Lagrange multipliers to give target p_k and r.
+    
+    :param yz: Lagrange multipliers 
+    :param net: network object
+    :type net: EdgeME object
+    :param target_pk: target value of pk
+    :param target_k: k for target value of pk
+    :param target_r: target value of r
+    :return: 
+    """
+
+    # Find maximum entropy solution
+    y,z = yz
+    opt = root(me_obj,x0=1,args=(y,z,net))
+    x = opt.x
+    ejk = calculate_ejk(x,y,z,net)
+    pk,r = net.analyse_ejk(ejk)
+    p = pk[net.k==target_k]
+
+    # Calculate distance to target
+    f = [(p-target_pk)**2, (r-target_r)**2]
+
+    return f
+
+
+def me_obj(x,y,z,net):
     """
     Objective function. 
     ejk = e^(-x*chi) * e^(-y*gamma) * e^(-z*zeta) / Z
     Solve sum_jk ((1/j+1/k)/2-1/k_mean)ejk == 0
     
-    :param x: Lagrange multiplier 
-    :param y: Lagrange multiplier
-    :param z: Lagrange multiplier
-    :param chi: coefficients for Lagrange multiplier
-    :param gamma: coefficients for Lagrange multiplier
-    :param zeta: coefficients for Lagrange multiplier
-    :param constraint: reciprocal of mean of k
-    :param kj: edge degrees included in calculation of j index
-    :param kk: edge degrees included in calculation of k index
+    :param x: first Lagrange multiplier 
+    :param y: second Lagrange multiplier
+    :param z: third Lagrange multiplier
+    :param net: network object
+    :type net: EdgeME object
     :return: sum_jk ((1/j+1/k)/2-1/k_mean)ejk
     """
 
     # Get significant ejk values
-    ejk = calculate_ejk(x,y,z,chi,gamma,zeta)
+    ejk = calculate_ejk(x,y,z,net)
 
     # Calculate objective function
-    f = np.sum((0.5*(1/kj+1/kk)-constraint) * ejk)
+    f = np.sum((0.5*(net.rkj+net.rkk)-net.constraint) * ejk)
 
     return f
 
 
-def calculate_ejk(x,y,z,chi,gamma,zeta,tol=-20):
+def calculate_ejk(x,y,z,net,tol=-20):
     """
     Calculate ejk in logarithmic space to avoid underflow errors,
     as can get very small contributions from some ring sizes.
     ejk = e^(-x*chi) * e^(-y*gamma) * e^(-z*zeta) / Z
     
-    :param x: Lagrange multiplier
-    :param y: Lagrange multiplier
-    :param z: Lagrange multiplier
-    :param chi: coefficients for Lagrange multiplier
-    :param gamma: coefficients for Lagrange multiplier
-    :param zeta: coefficients for Lagrange multiplier
+    :param x: first Lagrange multiplier
+    :param y: second Lagrange multiplier
+    :param z: third Lagrange multiplier
+    :param net: network object
+    :type net: EdgeME object
     :param tol: cutoff for significant k values
     :return: normalised ejk with insignificant values set to zero
     """
 
     # Calculate unnormalised ejk, sum of ejk and therefore normalised ejk
-    log_ejk = - x*chi - y*gamma - z*zeta
+    log_ejk = - x*net.chi - y*net.gamma - z*net.zeta
     log_ejk_max = np.max(log_ejk)
     log_norm = log_ejk_max + np.log(np.sum(np.exp(log_ejk - log_ejk_max)))
     log_ejk = log_ejk - log_norm
@@ -216,6 +264,8 @@ def calculate_ejk(x,y,z,chi,gamma,zeta,tol=-20):
 if __name__ == '__main__':
 
     me = EdgeME()
-    me.run(z=0.1)
-    me.plot_pk_r()
+    ejk,pk,r=me(0.5,-0.25)
+    print(pk,r)
+    # me.scan(z=0.1)
+    # me.plot_pk_r()
     # me.write()
