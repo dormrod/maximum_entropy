@@ -1,5 +1,6 @@
 import numpy as np
 from scipy.optimize import root
+from scipy.stats import entropy
 import matplotlib.pyplot as plt
 import matplotlib.pylab as pylab
 import matplotlib.ticker as ticker
@@ -9,7 +10,7 @@ class NodeME:
     """
     Calculates maximum entropy node degree distribution, pk, for a given k range
     with specified mean and range of variances.
-    Ref: A. ﻿Gervois, J.P. Troadec, J. Lemaitre, ﻿Journal of Physics A, 1992.
+    Ref: A. Gervois, J.P. Troadec, J. Lemaitre, Journal of Physics A, 1992.
     """
 
 
@@ -28,10 +29,11 @@ class NodeME:
         # Set up calculation and results vectors
         self.k = np.arange(k_limits[0],k_limits[-1]+1,dtype=int)
         self.k_mean = k_mean
-        self.constraint = self.k_mean
+        self.mean_constraint = self.k_mean
         self.calculate_coefficients()
         self.pk = [] # me distribution
         self.k_var = [] # variance <k^2> - <k>^2
+        self.entropy = [] # shannon entropy
 
 
     def calculate_coefficients(self):
@@ -81,8 +83,10 @@ class NodeME:
             if opt.success:
                 pk = calculate_pk(opt.x,y,self)
                 var_k = (self.k*self.k*pk).sum() - ((self.k*pk).sum())**2
+                s = entropy(pk)
                 self.pk.append(pk)
                 self.k_var.append(var_k)
+                self.entropy.append(s)
 
 
     def get_pk(self,k=None):
@@ -108,6 +112,16 @@ class NodeME:
         """
 
         return np.array(self.k_var)
+
+
+    def get_entropy(self):
+        """
+        Get entropy of node distributions.
+        
+        :return: numpy array of (pnts,entropy)
+        """
+
+        return np.array(self.entropy)
 
 
     def plot_pk_variance(self,k=6):
@@ -190,7 +204,7 @@ def me_obj(x,y,net):
     pk = calculate_pk(x,y,net)
 
     # Calculate objective function
-    f = np.sum((net.k-net.constraint) * pk)
+    f = np.sum((net.k-net.mean_constraint) * pk)
 
     return f
 
@@ -225,11 +239,32 @@ def calculate_pk(x,y,net,tol=-20):
 
 if __name__ == '__main__':
 
-    me = NodeME()
-    print(me(0.5))
+    me = NodeME(k_mean=6,k_limits=(3,12))
     me.scan()
     me.plot_pk_variance()
-    me.write()
+    p6=[]
+    mu=[]
+    for p in np.arange(0.1,1.0,0.001):
+        pk=me(p)
+        print(p)
+        if pk is not None:
+            p6.append(pk[3])
+            mu.append((pk*me.k*me.k).sum()-((pk*me.k).sum())**2)
+    p6 = np.array(p6)
+    mu = np.array(mu)
+    res = np.zeros((p6.size,2))
+    res[:,0] = p6[:]
+    res[:,1] = mu[:]
+    np.savetxt('lm.dat',res)
+    #rs=me(0.12,k=15)
+    #k = np.arange(3,21)
+    #mu = np.sum(k*k*rs)-np.sum(k*rs)**2
+
+    #print(mu)
+    #for i,r in enumerate(rs):
+    #    print(i+3,r)
+    #print(k*k*rs)
+    #me.write()
 
 
 
