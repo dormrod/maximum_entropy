@@ -21,7 +21,7 @@ from node_me import NodeME
 model = NodeME(k_mean=6.0, k_limits=(3,12))
 ```
 The maximum entropy distribution can then be obtained given the value 
-for a single node size (suggested to be the maximum) via:
+for a single node size (suggested to be the most common) via:
 ```python
 distribution = model(0.5,k=6)
 ```
@@ -34,5 +34,9 @@ model.write()
 which will write the distributions and variances to ```node_dist.dat```.
 These will not necessarily be evenly spaced, and so it may be preferable
 to use the call function in a loop.
+
+### Edge joint degree distribution
+To come...
+
 
 
