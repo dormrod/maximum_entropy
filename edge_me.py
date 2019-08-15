@@ -227,7 +227,7 @@ def me_obj(x,y,z,net):
     ejk = calculate_ejk(x,y,z,net)
 
     # Calculate objective function
-    f = np.sum((0.5*(net.rkj+net.rkk)-net.constraint) * ejk)
+    f = np.sum((net.gamma-net.constraint) * ejk)
 
     return f
 
@@ -263,9 +263,8 @@ def calculate_ejk(x,y,z,net,tol=-20):
 
 if __name__ == '__main__':
 
-    me = EdgeME()
-    ejk,pk,r=me(0.5,-0.25)
-    print(pk,r)
-    # me.scan(z=0.1)
-    # me.plot_pk_r()
-    # me.write()
+    me = EdgeME(k_limits=(3,20))
+    ejk,pk,r=me(0.295, -0.15)
+    print(ejk,pk,r)
+    me.scan(z=0.2)
+    me.plot_pk_r()

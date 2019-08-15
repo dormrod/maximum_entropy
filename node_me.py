@@ -239,34 +239,7 @@ def calculate_pk(x,y,net,tol=-20):
 
 if __name__ == '__main__':
 
-    me = NodeME(k_mean=6,k_limits=(3,12))
+    me = NodeME(k_mean=6,k_limits=(3,20))
     me.scan()
-    me.plot_pk_variance()
-    p6=[]
-    mu=[]
-    for p in np.arange(0.1,1.0,0.001):
-        pk=me(p)
-        print(p)
-        if pk is not None:
-            p6.append(pk[3])
-            mu.append((pk*me.k*me.k).sum()-((pk*me.k).sum())**2)
-    p6 = np.array(p6)
-    mu = np.array(mu)
-    res = np.zeros((p6.size,2))
-    res[:,0] = p6[:]
-    res[:,1] = mu[:]
-    np.savetxt('lm.dat',res)
-    #rs=me(0.12,k=15)
-    #k = np.arange(3,21)
-    #mu = np.sum(k*k*rs)-np.sum(k*rs)**2
-
-    #print(mu)
-    #for i,r in enumerate(rs):
-    #    print(i+3,r)
-    #print(k*k*rs)
-    #me.write()
-
-
-
-
+    me.plot_pk_variance(k=4)
 
